@@ -159,17 +159,16 @@ input[type=file]{display:none}
   </section>
 
   <section class="panel" aria-labelledby="hand">
-    <h2 id="hand">Finish and send to RQ</h2>
+    <h2 id="hand">Finish the count</h2>
     <ol class="steps">
-      <li><b>On the tablet:</b> tap <b>Save count</b> and choose Drive. That one file holds the whole count.</li>
-      <li><b>On the PC:</b> open this app, tap <b>Open file</b> and pick that count file from Drive.</li>
-      <li>Tap <b>Copy list</b>, open the RQ inventory count, click into the serial box and press <b>Ctrl+Shift+V</b> to run the RQ Count Typer.</li>
+      <li><b>Save to Drive</b> from the tablet.</li>
+      <li><b>Open on PC:</b> open this app, tap <b>Open file</b> and pick the saved count.</li>
     </ol>
     <label class="chk"><input type="checkbox" id="optNon" checked> Include non-serial items (SKU repeated once per unit)</label>
     <label class="chk"><input type="checkbox" id="optExt"> Include serials that weren't on the RQ sheet</label>
     <textarea id="out" readonly aria-label="List for RQ"></textarea>
     <div class="row">
-      <button class="primary" id="saveBtn">Save count</button>
+      <button class="primary" id="saveBtn">Save to Drive</button>
       <button id="copyBtn">Copy list</button>
       <button id="dlTxt">Save list only (.txt)</button>
       <span class="note" id="outNote"></span>
@@ -186,7 +185,7 @@ input[type=file]{display:none}
 
 <script>
 (function(){
-const APP_VERSION='1.0.0';
+const APP_VERSION='1.0.1';
 const KEY='rqFloorCount.v1';
 const $=id=>document.getElementById(id);
 const norm=s=>String(s==null?'':s).trim().replace(/\s+/g,'').toUpperCase();
