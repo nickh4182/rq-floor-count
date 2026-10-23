@@ -185,7 +185,7 @@ input[type=file]{display:none}
 
 <script>
 (function(){
-const APP_VERSION='1.0.1';
+const APP_VERSION='1.0.2';
 const KEY='rqFloorCount.v1';
 const $=id=>document.getElementById(id);
 const norm=s=>String(s==null?'':s).trim().replace(/\s+/g,'').toUpperCase();
@@ -400,7 +400,7 @@ function render(){
 }
 function renderList(){
   const q=norm($('filter').value);const L=$('list');let html='';
-  const match=r=>!q||norm(r.name+r.sku+r.serial+r.mfr).includes(q);
+  const match=r=>!q||norm(r.name+r.sku+r.serial+r.mfr+r.vendor).includes(q);
   if(tab==='ext'){
     const xs=S.extras.map((x,i)=>({x,i})).filter(o=>!q||o.x.code.includes(q));
     html=xs.map(o=>`<div class="item"><div class="name mono">${esc(o.x.code)}</div><div class="sub">Scanned, not on the RQ sheet. Could be stock not received in RQ, or a misread barcode.</div><div class="act"><button data-a="rmx" data-i="${o.i}">Remove</button></div></div>`).join('');
@@ -414,7 +414,7 @@ function renderList(){
     });
     html=rows.map(({r,i})=>{
       if(tab==='non'){const d=r.count-r.inStock;const st=d===0?'':` <span class="tag">${d>0?'+':''}${d}</span>`;
-        return `<div class="item"><div class="name">${esc(r.name)}${st}</div><div class="sub">${esc(r.sku)} • RQ says ${r.inStock}</div><div class="act"><button data-a="minus" data-i="${i}" aria-label="Minus one">−</button><span class="qty">${r.count}</span><button data-a="plus" data-i="${i}" aria-label="Plus one">+</button></div></div>`;}
+        return `<div class="item"><div class="name">${esc(r.name)}${st}</div><div class="sub">${esc(r.vendor||r.sku)} • RQ says ${r.inStock}</div><div class="act"><button data-a="minus" data-i="${i}" aria-label="Minus one">−</button><span class="qty">${r.count}</span><button data-a="plus" data-i="${i}" aria-label="Plus one">+</button></div></div>`;}
       const btn=tab==='unc'?`<button data-a="mark" data-i="${i}">Mark found</button>`:`<button data-a="unmark" data-i="${i}">Uncount</button>`;
       const how=r.how==='manual'?' <span class="tag">by hand</span>':'';
       return `<div class="item"><div class="name">${esc(r.name)}${how}</div><div class="sub">${esc(r.serial)} • ${esc(r.sku)}</div><div class="act">${btn}</div></div>`;

@@ -1,6 +1,6 @@
 // RQ Floor Count service worker: keeps the app working offline.
 // Bump VERSION whenever you upload changed files so devices pick up the update.
-const VERSION = 'rq-floor-count-v1.0.1';
+const VERSION = 'rq-floor-count-v1.0.2';
 const SHELL = [
   './',
   './index.html',
