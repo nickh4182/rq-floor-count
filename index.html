@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>RQ Floor Count</title>
+<meta name="description" content="Count TELUS | Koodo inventory on a tablet against the RQ count sheet, then hand the list back to RQ.">
+<meta name="theme-color" content="#1f6b45">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<script src="xlsx.full.min.js"></script>
+<style>
+/* Layout: one working column — scan bar pinned up top, progress strip, tabbed lists, hand-off panel at the end */
+:root{
+  --bg:#f3f5f2; --panel:#ffffff; --ink:#18221c; --muted:#5d6b62; --line:#d9e0da;
+  --accent:#1f6b45; --accent-ink:#ffffff; --accent-soft:#e2efe7;
+  --ok:#1f8a4c; --ok-soft:#dcf2e4; --warn:#a86400; --warn-soft:#fbecd2; --bad:#b3261e; --bad-soft:#f8dedb;
+  --display:"Barlow Semi Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:"Barlow",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Consolas,"Roboto Mono",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root{
+  --bg:#111814; --panel:#18211c; --ink:#e6ede8; --muted:#94a39a; --line:#2b3830;
+  --accent:#4fbf83; --accent-ink:#0b1510; --accent-soft:#1d3427;
+  --ok:#55c987; --ok-soft:#183626; --warn:#e7a542; --warn-soft:#3a2b12; --bad:#f07a70; --bad-soft:#3c1c19; color-scheme:dark}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 var(--body);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-top:calc(12px + env(safe-area-inset-top,0px));padding-bottom:calc(40px + env(safe-area-inset-bottom,0px))}
+.wrap{max-width:900px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+h1,h2{font-family:var(--display);font-weight:700;letter-spacing:.01em;margin:0;text-wrap:balance}
+h1{font-size:1.6rem}
+h2{font-size:1.15rem}
+.mono{font-family:var(--mono)}
+header.top{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;justify-content:space-between}
+.meta{font-size:.9rem;color:var(--muted)}
+.meta b{color:var(--ink);font-weight:600}
+.badge{display:inline-block;font:600 .72rem/1 var(--body);text-transform:uppercase;letter-spacing:.08em;padding:4px 7px;border-radius:4px;background:var(--warn-soft);color:var(--warn);vertical-align:middle}
+button,.btn{font:600 .95rem var(--body);border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:10px 14px;border-radius:8px;cursor:pointer;min-height:44px;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+button:hover,.btn:hover{border-color:var(--accent)}
+button:focus-visible,.btn:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button.danger{color:var(--bad);border-color:var(--bad)}
+button:disabled{opacity:.5;cursor:not-allowed}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.storeline{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.storeline label{font:600 .78rem var(--body);text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+#store{font:600 1rem var(--body);padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);min-width:0;width:14rem;max-width:100%}
+
+.scanbar{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:10px;box-shadow:0 6px 18px -12px rgba(0,0,0,.35)}
+.scanline{display:flex;gap:8px}
+#scan{flex:1;min-width:0;font:600 1.3rem var(--mono);padding:12px 14px;border:2px solid var(--accent);border-radius:8px;background:var(--bg);color:var(--ink)}
+.feedback{min-height:48px;border-radius:8px;padding:10px 12px;display:flex;gap:10px;align-items:center;font-weight:500;background:var(--bg);color:var(--muted);transition:background .15s}
+.feedback .k{font:700 .75rem var(--body);text-transform:uppercase;letter-spacing:.08em;padding:4px 7px;border-radius:4px;flex:none}
+.feedback.ok{background:var(--ok-soft);color:var(--ink)} .feedback.ok .k{background:var(--ok);color:var(--panel)}
+.feedback.warn{background:var(--warn-soft);color:var(--ink)} .feedback.warn .k{background:var(--warn);color:var(--panel)}
+.feedback.bad{background:var(--bad-soft);color:var(--ink)} .feedback.bad .k{background:var(--bad);color:var(--panel)}
+.feedback .txt{min-width:0;overflow-wrap:anywhere}
+
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.stat .n{font:700 1.7rem/1.1 var(--display);font-variant-numeric:tabular-nums}
+.stat .l{font-size:.78rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
+.stat.u .n{color:var(--bad)} .stat.c .n{color:var(--ok)} .stat.x .n{color:var(--warn)}
+.bar{height:8px;border-radius:4px;background:var(--line);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--ok);width:0;transition:width .3s}
+@media (max-width:560px){.stats{grid-template-columns:repeat(2,1fr)}}
+
+.tabs{display:flex;gap:4px;overflow-x:auto;border-bottom:1px solid var(--line)}
+.tabs button{border:none;border-bottom:3px solid transparent;border-radius:0;background:none;color:var(--muted);padding:10px 12px;white-space:nowrap}
+.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+.tabs .ct{font-variant-numeric:tabular-nums;font-weight:500;color:var(--muted);margin-left:2px}
+#filter{width:100%;font:1rem var(--body);padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink)}
+.list{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.item{display:grid;grid-template-columns:1fr auto;gap:4px 12px;padding:10px 12px;border-top:1px solid var(--line);align-items:center}
+.item:first-child{border-top:none}
+.item .name{font-weight:600;min-width:0;overflow-wrap:anywhere}
+.item .sub{font:.82rem var(--mono);color:var(--muted);min-width:0;overflow-wrap:anywhere}
+.item .act{grid-row:1/3;grid-column:2;display:flex;gap:6px;align-items:center}
+.item .act button{min-height:40px;padding:6px 10px;font-size:.85rem}
+.qty{font:700 1.2rem var(--display);font-variant-numeric:tabular-nums;min-width:3ch;text-align:center}
+.tag{font:600 .7rem var(--body);text-transform:uppercase;letter-spacing:.07em;padding:3px 6px;border-radius:4px;background:var(--accent-soft);color:var(--accent)}
+.empty{padding:22px 14px;color:var(--muted);text-align:center}
+
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px}
+textarea{width:100%;min-height:140px;font:.85rem/1.5 var(--mono);padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);resize:vertical}
+label.chk{display:flex;gap:8px;align-items:center;font-size:.95rem}
+label.chk input{width:20px;height:20px;accent-color:var(--accent)}
+.confirm{border:1px solid var(--bad);background:var(--bad-soft);border-radius:8px;padding:10px 12px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.note{font-size:.85rem;color:var(--muted)}
+.steps{margin:0;padding-left:1.2em;font-size:.92rem;color:var(--muted)}
+.steps b{color:var(--ink)}
+input[type=file]{display:none}
+
+.cam{position:fixed;inset:0;z-index:20;background:#000;display:flex;flex-direction:column}
+.cam video{flex:1;min-height:0;width:100%;object-fit:cover}
+.cam .reticle{position:absolute;left:10%;right:10%;top:38%;height:22%;border:3px solid #4fbf83;border-radius:10px;box-shadow:0 0 0 2000px rgba(0,0,0,.35);pointer-events:none}
+.cam .camfoot{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:12px max(16px,env(safe-area-inset-right,0px)) calc(12px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));background:#111;color:#e6ede8}
+.cam .camfoot .txt{min-width:0;overflow-wrap:anywhere;font-size:.95rem}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div style="display:flex;flex-direction:column;gap:6px;min-width:0">
+      <h1>RQ Floor Count</h1>
+      <div class="meta" id="meta">Loading…</div>
+      <div class="storeline"><label for="store">Store</label><input id="store" placeholder="e.g. Square One" autocomplete="off"></div>
+    </div>
+    <div class="row">
+      <label class="btn" for="file" role="button" tabindex="0" id="loadBtn">Open file</label>
+      <input type="file" id="file" accept=".xls,.xlsx,.csv,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+      <button id="newBtn" class="danger">Clear scans</button>
+    </div>
+  </header>
+  <div id="confirmBox" class="confirm" hidden>
+    <span id="confirmMsg"></span>
+    <button id="confirmYes" class="danger"></button>
+    <button id="confirmNo">Cancel</button>
+  </div>
+
+  <section class="scanbar" aria-label="Scan">
+    <form class="scanline" id="scanForm" autocomplete="off">
+      <input id="scan" inputmode="text" autocapitalize="characters" spellcheck="false" enterkeyhint="done" placeholder="Scan or type IMEI / serial / barcode" aria-label="Serial or barcode">
+      <button class="primary" type="submit">Add</button>
+      <button type="button" id="camBtn" hidden aria-label="Scan with camera">Camera</button>
+    </form>
+    <div class="feedback" id="fb" role="status" aria-live="polite"><span class="txt">Scan a device. Each serial is checked against the RQ sheet as you go.</span></div>
+    <div class="row">
+      <button id="undoBtn" disabled>Undo last scan</button>
+      <span class="note" id="saved"></span>
+    </div>
+  </section>
+
+  <section class="stats" aria-label="Progress">
+    <div class="stat u"><div class="n" id="sU">0</div><div class="l">Still to find</div></div>
+    <div class="stat c"><div class="n" id="sC">0</div><div class="l">Counted serials</div></div>
+    <div class="stat"><div class="n" id="sN">0</div><div class="l">Non-serial units</div></div>
+    <div class="stat x"><div class="n" id="sX">0</div><div class="l">Not in RQ</div></div>
+  </section>
+  <div class="bar" aria-hidden="true"><i id="barFill"></i></div>
+
+  <section style="display:flex;flex-direction:column;gap:10px">
+    <div class="tabs" role="tablist" id="tabs">
+      <button role="tab" data-tab="unc" aria-selected="true">Uncounted <span class="ct" id="tU"></span></button>
+      <button role="tab" data-tab="cnt" aria-selected="false">Counted <span class="ct" id="tC"></span></button>
+      <button role="tab" data-tab="non" aria-selected="false">Non-serial <span class="ct" id="tN"></span></button>
+      <button role="tab" data-tab="ext" aria-selected="false">Not in RQ <span class="ct" id="tX"></span></button>
+    </div>
+    <input id="filter" type="search" placeholder="Filter by name, SKU or serial" aria-label="Filter list">
+    <div class="list" id="list"></div>
+  </section>
+
+  <section class="panel" aria-labelledby="hand">
+    <h2 id="hand">Finish and send to RQ</h2>
+    <ol class="steps">
+      <li><b>On the tablet:</b> tap <b>Save count</b> and choose Drive. That one file holds the whole count.</li>
+      <li><b>On the PC:</b> open this app, tap <b>Open file</b> and pick that count file from Drive.</li>
+      <li>Tap <b>Copy list</b>, open the RQ inventory count, click into the serial box and press <b>Ctrl+Shift+V</b> to run the RQ Count Typer.</li>
+    </ol>
+    <label class="chk"><input type="checkbox" id="optNon" checked> Include non-serial items (SKU repeated once per unit)</label>
+    <label class="chk"><input type="checkbox" id="optExt"> Include serials that weren't on the RQ sheet</label>
+    <textarea id="out" readonly aria-label="List for RQ"></textarea>
+    <div class="row">
+      <button class="primary" id="saveBtn">Save count</button>
+      <button id="copyBtn">Copy list</button>
+      <button id="dlTxt">Save list only (.txt)</button>
+      <span class="note" id="outNote"></span>
+    </div>
+  </section>
+  <p class="note" id="ver" style="margin:0"></p>
+</div>
+
+<div class="cam" id="cam" hidden>
+  <video id="camVideo" playsinline muted></video>
+  <div class="reticle" aria-hidden="true"></div>
+  <div class="camfoot"><span class="txt" id="camTxt">Point at the IMEI or serial barcode.</span><button id="camClose" class="primary">Done</button></div>
+</div>
+
+<script>
+(function(){
+const APP_VERSION='1.0.0';
+const KEY='rqFloorCount.v1';
+const $=id=>document.getElementById(id);
+const norm=s=>String(s==null?'':s).trim().replace(/\s+/g,'').toUpperCase();
+$('ver').textContent='RQ Floor Count v'+APP_VERSION+' • works offline once installed';
+
+/* ---------- example data shown before a sheet is opened ---------- */
+function sample(){
+  const rows=[
+   ['TELUS | Koodo Devices','CETETH000101','Sample Phone A 128GB Black','350000000000011',1],
+   ['TELUS | Koodo Devices','CETETH000102','Sample Phone A 128GB Blue','350000000000029',1],
+   ['TELUS | Koodo Devices','CETETH000103','Sample Phone B 256GB Silver','350000000000037',1],
+   ['TELUS | Koodo Devices','CETETH000104','Sample Phone C 256GB Graphite','350000000000045',1],
+   ['TELUS | Koodo Devices','CETETH000105','Sample Phone C 512GB Graphite','350000000000052',1],
+   ['SIM Cards','CESIM0000001','Sample SIM Card 3-in-1','',12]
+  ].map(r=>({status:'In Stock',cat:r[0],sku:r[1],name:r[2],serial:r[3],inStock:r[4],mfr:'',vendor:'',barcode:'',count:0,how:''}));
+  rows[0].count=1;rows[0].how='scan';rows[2].count=1;rows[2].how='scan';rows[5].count=7;
+  return {sample:true,store:'',meta:{title:'Example count',date:'',file:'Example rows. Open your RQ count sheet to start.'},rows,extras:[{code:'350000000000999',at:''}],log:[]};
+}
+
+let S=null, idxSerial=new Map(), idxNon=new Map(), tab='unc';
+
+function store(){try{localStorage.setItem(KEY,JSON.stringify(S));$('saved').textContent='Autosaved '+new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});}catch(e){$('saved').textContent='Couldn’t autosave on this device. Tap Save count before closing.';}}
+function restore(){try{const r=localStorage.getItem(KEY);return r?JSON.parse(r):null;}catch(e){return null;}}
+
+function reindex(){
+  idxSerial=new Map();idxNon=new Map();
+  S.rows.forEach((r,i)=>{
+    if(norm(r.serial)) idxSerial.set(norm(r.serial),i);
+    else [r.barcode,r.mfr,r.vendor,r.sku].forEach(c=>{const k=norm(c);if(k&&!idxNon.has(k))idxNon.set(k,i);});
+  });
+}
+function scanCount(){return S.rows.reduce((a,r)=>a+r.count,0)+S.extras.length;}
+
+/* ---------- reading files ---------- */
+function parseCSV(text){
+  const out=[];let row=[],f='',q=false;
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(q){if(c==='"'){if(text[i+1]==='"'){f+='"';i++;}else q=false;}else f+=c;}
+    else if(c==='"')q=true;
+    else if(c===','){row.push(f);f='';}
+    else if(c==='\n'){row.push(f);out.push(row);row=[];f='';}
+    else if(c!=='\r')f+=c;
+  }
+  if(f!==''||row.length){row.push(f);out.push(row);}
+  return out;
+}
+function findHeader(aoa,need){
+  for(let i=0;i<Math.min(aoa.length,30);i++){const r=(aoa[i]||[]).map(c=>String(c).trim().toLowerCase());if(need.every(n=>r.includes(n)))return {i,hdr:r};}
+  return null;
+}
+function cell(r,ix){return ix<0||r[ix]==null?'':String(r[ix]).trim();}
+
+function parseRQ(aoa,fileName){
+  const h=findHeader(aoa,['product sku','tracking #']);
+  if(!h)return null;
+  const col=n=>h.hdr.indexOf(n);
+  const c={status:col('status'),cat:col('category'),sku:col('product sku'),name:col('product name'),serial:col('tracking #'),inStock:col('in stock'),mfr:col('manufacturer sku'),vendor:col('vendor sku'),barcode:col('bar code')};
+  const rows=[];
+  for(let i=h.i+1;i<aoa.length;i++){
+    const r=aoa[i]||[];const sku=cell(r,c.sku),name=cell(r,c.name),ser=cell(r,c.serial);
+    if(!sku&&!name&&!ser)continue;
+    rows.push({status:cell(r,c.status),cat:cell(r,c.cat).split('>>').pop().trim(),sku,name,serial:ser,
+      inStock:ser?1:(parseFloat(cell(r,c.inStock))||0),mfr:cell(r,c.mfr),vendor:cell(r,c.vendor),barcode:cell(r,c.barcode),count:0,how:''});
+  }
+  const title=String((aoa[0]||[])[0]||'Inventory count').trim();
+  const dm=aoa.slice(0,h.i).map(r=>String((r||[])[0]||'')).find(t=>/date/i.test(t))||'';
+  return {sample:false,store:S&&!S.sample?S.store:'',meta:{title,date:dm.replace(/[\[\]]/g,'').replace(/^date:\s*/i,'').trim(),file:fileName},rows,extras:[],log:[]};
+}
+function parseSaved(aoa,fileName){
+  if(String((aoa[0]||[])[0]||'').trim()!=='RQ Floor Count results')return null;
+  const h=findHeader(aoa,['result','tracking #','counted']);if(!h)return null;
+  const kv={};aoa.slice(1,h.i).forEach(r=>{if(r&&r[0])kv[String(r[0]).trim().toLowerCase()]=r.slice(1).map(x=>String(x));});
+  const col=n=>h.hdr.indexOf(n);
+  const c={res:col('result'),cat:col('category'),sku:col('product sku'),name:col('product name'),serial:col('tracking #'),count:col('counted'),inStock:col('in stock (rq)'),how:col('how'),mfr:col('manufacturer sku'),vendor:col('vendor sku'),barcode:col('bar code'),at:col('scanned at')};
+  const rows=[],extras=[];
+  for(let i=h.i+1;i<aoa.length;i++){
+    const r=aoa[i]||[];const res=cell(r,c.res);if(!res)continue;
+    if(res==='Not in RQ'){extras.push({code:norm(cell(r,c.serial)),at:cell(r,c.at)});continue;}
+    rows.push({status:'',cat:cell(r,c.cat),sku:cell(r,c.sku),name:cell(r,c.name),serial:cell(r,c.serial),inStock:parseFloat(cell(r,c.inStock))||0,
+      mfr:cell(r,c.mfr),vendor:cell(r,c.vendor),barcode:cell(r,c.barcode),count:parseFloat(cell(r,c.count))||0,how:cell(r,c.how)});
+  }
+  const sh=kv['rq sheet']||[];
+  return {sample:false,store:(kv['store']||[''])[0],meta:{title:sh[0]||'Saved count',date:sh[1]||'',file:fileName+' (saved '+((kv['saved']||[''])[0]||'').replace('T',' ').slice(0,16)+')'},rows,extras,log:[]};
+}
+
+let pending=null;
+function askConfirm(msg,yes,fn){$('confirmMsg').textContent=msg;$('confirmYes').textContent=yes;pending=fn;$('confirmBox').hidden=false;}
+$('confirmNo').addEventListener('click',()=>{$('confirmBox').hidden=true;pending=null;});
+$('confirmYes').addEventListener('click',()=>{$('confirmBox').hidden=true;const f=pending;pending=null;if(f)f();});
+
+function adopt(next,msg){S=next;reindex();$('store').value=S.store||'';store();render();flash('ok','Opened',msg);}
+
+$('file').addEventListener('change',e=>{
+  const f=e.target.files[0];e.target.value='';if(!f)return;
+  const isCSV=/\.csv$/i.test(f.name)||f.type==='text/csv';
+  const rd=new FileReader();
+  rd.onload=ev=>{
+    try{
+      let aoa;
+      if(isCSV) aoa=parseCSV(new TextDecoder('utf-8').decode(ev.target.result).replace(/^﻿/,''));
+      else{
+        if(typeof XLSX==='undefined')throw new Error('The spreadsheet reader didn’t load. Reload the app and try again.');
+        const wb=XLSX.read(new Uint8Array(ev.target.result),{type:'array'});
+        aoa=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:false,defval:''});
+      }
+      const saved=parseSaved(aoa,f.name);
+      const next=saved||parseRQ(aoa,f.name);
+      if(!next)throw new Error('That file isn’t an RQ Inventory Count Sheet or a saved count. Open the RQ export (.xls) or a count saved from this app (.csv).');
+      if(!next.rows.length&&!next.extras.length)throw new Error('The file opened but has no product rows.');
+      const go=()=>adopt(next,saved?`Saved count for ${next.store||'this store'}: ${next.rows.filter(r=>norm(r.serial)&&r.count).length} serials counted. Copy the list below for RQ.`:`${next.rows.length} lines from ${f.name}. Start scanning.`);
+      if(!S.sample&&scanCount()>0)askConfirm(`Replace the current count (${scanCount()} scans) with ${f.name}? Save the current count first if you need it.`,'Replace it',go);
+      else go();
+    }catch(err){flash('bad','Can’t open',err.message);}
+  };
+  rd.readAsArrayBuffer(f);
+});
+$('loadBtn').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();$('file').click();}});
+$('store').addEventListener('input',()=>{S.store=$('store').value.trim();store();});
+
+/* ---------- scanning ---------- */
+let actx=null;
+function beep(ok){try{actx=actx||new (window.AudioContext||window.webkitAudioContext)();const o=actx.createOscillator(),g=actx.createGain();o.frequency.value=ok?1320:330;g.gain.value=.08;o.connect(g);g.connect(actx.destination);o.start();o.stop(actx.currentTime+(ok?.08:.25));}catch(e){}
+  try{if(navigator.vibrate)navigator.vibrate(ok?40:[60,60,60]);}catch(e){}}
+function flash(kind,k,txt){const fb=$('fb');fb.className='feedback '+kind;fb.innerHTML='';const a=document.createElement('span');a.className='k';a.textContent=k;const b=document.createElement('span');b.className='txt';b.textContent=txt;fb.append(a,b);if(!$('cam').hidden)$('camTxt').textContent=k+': '+txt;}
+
+function addCode(raw){
+  const code=norm(raw);if(!code)return;
+  if(S.sample){flash('warn','Example','This is example data. Tap Open file and pick the RQ count sheet first.');beep(false);return;}
+  const t=new Date().toISOString();
+  if(idxSerial.has(code)){
+    const i=idxSerial.get(code),r=S.rows[i];
+    if(r.count>=1){flash('warn','Already counted',`${r.name} • ${r.serial}`);beep(false);return;}
+    r.count=1;r.how='scan';r.at=t;S.log.push({t:'ser',i});flash('ok','Counted',`${r.name} • ${r.serial}`);beep(true);
+  }else if(idxNon.has(code)){
+    const i=idxNon.get(code),r=S.rows[i];r.count++;S.log.push({t:'non',i});
+    flash('ok','+1',`${r.name} • now ${r.count} of ${r.inStock}`);beep(true);
+  }else{
+    if(S.extras.some(x=>x.code===code)){flash('warn','Already logged',`${code} is already on the Not in RQ list.`);beep(false);return;}
+    S.extras.push({code,at:t});S.log.push({t:'ext',code});
+    flash('bad','Not in RQ',`${code} isn’t on this count sheet. Logged under “Not in RQ”. If it was a misread, undo and rescan.`);beep(false);
+  }
+  store();render();
+}
+$('scanForm').addEventListener('submit',e=>{e.preventDefault();addCode($('scan').value);$('scan').value='';$('scan').focus();});
+$('undoBtn').addEventListener('click',()=>{
+  const l=S.log.pop();if(!l)return;
+  if(l.t==='ser'){const r=S.rows[l.i];r.count=0;r.how='';flash('warn','Undone',`${r.name} • ${r.serial} is back to uncounted.`);}
+  else if(l.t==='non'){const r=S.rows[l.i];r.count=Math.max(0,r.count-1);flash('warn','Undone',`${r.name} • now ${r.count}`);}
+  else if(l.t==='ext'){S.extras=S.extras.filter(x=>x.code!==l.code);flash('warn','Undone',`Removed ${l.code} from Not in RQ.`);}
+  store();render();$('scan').focus();
+});
+
+/* ---------- camera scanning (Android Chrome) ---------- */
+let camStream=null,camTimer=null,lastCam={code:'',t:0};
+if('BarcodeDetector' in window){
+  BarcodeDetector.getSupportedFormats().then(f=>{if(f&&f.length)$('camBtn').hidden=false;}).catch(()=>{});
+}
+$('camBtn').addEventListener('click',async()=>{
+  try{
+    const fmts=await BarcodeDetector.getSupportedFormats();
+    const want=['code_128','code_39','ean_13','ean_8','upc_a','upc_e','itf','qr_code','data_matrix'].filter(f=>fmts.includes(f));
+    const det=new BarcodeDetector({formats:want});
+    camStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:{ideal:1920},height:{ideal:1080}}});
+    const v=$('camVideo');v.srcObject=camStream;await v.play();$('cam').hidden=false;
+    $('camTxt').textContent='Point at the IMEI or serial barcode.';
+    camTimer=setInterval(async()=>{
+      try{const hits=await det.detect(v);if(!hits.length)return;
+        const code=hits[0].rawValue;const now=Date.now();
+        if(code===lastCam.code&&now-lastCam.t<2500)return;
+        lastCam={code,t:now};addCode(code);
+      }catch(e){}
+    },200);
+  }catch(e){flash('bad','Camera',e&&e.name==='NotAllowedError'?'Camera permission was refused. Allow it in the browser’s site settings to scan with the camera.':'Couldn’t start the camera on this device.');}
+});
+function stopCam(){clearInterval(camTimer);camTimer=null;if(camStream)camStream.getTracks().forEach(t=>t.stop());camStream=null;$('cam').hidden=true;$('scan').focus();}
+$('camClose').addEventListener('click',stopCam);
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&camStream)stopCam();});
+
+/* ---------- list actions ---------- */
+$('list').addEventListener('click',e=>{
+  const b=e.target.closest('button[data-a]');if(!b||S.sample)return;
+  const a=b.dataset.a,i=+b.dataset.i;
+  if(a==='mark'){S.rows[i].count=1;S.rows[i].how='manual';S.log.push({t:'ser',i});flash('ok','Counted by hand',`${S.rows[i].name} • ${S.rows[i].serial}`);}
+  if(a==='unmark'){S.rows[i].count=0;S.rows[i].how='';flash('warn','Uncounted',`${S.rows[i].name} • ${S.rows[i].serial}`);}
+  if(a==='plus'){S.rows[i].count++;S.log.push({t:'non',i});}
+  if(a==='minus'){S.rows[i].count=Math.max(0,S.rows[i].count-1);}
+  if(a==='rmx'){S.extras.splice(i,1);}
+  store();render();
+});
+$('tabs').addEventListener('click',e=>{const b=e.target.closest('button[data-tab]');if(!b)return;tab=b.dataset.tab;[...$('tabs').children].forEach(x=>x.setAttribute('aria-selected',x===b));renderList();});
+$('filter').addEventListener('input',renderList);
+
+$('newBtn').addEventListener('click',()=>{
+  if(S.sample||!scanCount()){flash('warn','Nothing to clear','No scans yet.');return;}
+  askConfirm(`Erase all ${scanCount()} scans and start this count over? The RQ sheet stays loaded.`,'Erase scans',()=>{
+    S.rows.forEach(r=>{r.count=0;r.how='';});S.extras=[];S.log=[];store();render();flash('warn','Cleared','All scans erased. Open a fresh RQ sheet if stock has changed.');
+  });
+});
+
+/* ---------- render ---------- */
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function render(){
+  const ser=S.rows.filter(r=>norm(r.serial)),non=S.rows.filter(r=>!norm(r.serial));
+  const cnt=ser.filter(r=>r.count>=1).length,unc=ser.length-cnt,nonU=non.reduce((a,r)=>a+r.count,0);
+  $('meta').innerHTML=(S.sample?'<span class="badge">Example data</span> ':'')+`<b>${esc(S.meta.title)}</b>${S.meta.date?' • exported '+esc(S.meta.date):''}<br>${esc(S.meta.file||'')}`;
+  $('sU').textContent=unc;$('sC').textContent=cnt;$('sN').textContent=nonU;$('sX').textContent=S.extras.length;
+  $('tU').textContent=unc;$('tC').textContent=cnt;$('tN').textContent=non.length;$('tX').textContent=S.extras.length;
+  $('barFill').style.width=(ser.length?cnt/ser.length*100:0)+'%';
+  $('undoBtn').disabled=!S.log.length;
+  renderList();renderOut();
+}
+function renderList(){
+  const q=norm($('filter').value);const L=$('list');let html='';
+  const match=r=>!q||norm(r.name+r.sku+r.serial+r.mfr).includes(q);
+  if(tab==='ext'){
+    const xs=S.extras.map((x,i)=>({x,i})).filter(o=>!q||o.x.code.includes(q));
+    html=xs.map(o=>`<div class="item"><div class="name mono">${esc(o.x.code)}</div><div class="sub">Scanned, not on the RQ sheet. Could be stock not received in RQ, or a misread barcode.</div><div class="act"><button data-a="rmx" data-i="${o.i}">Remove</button></div></div>`).join('');
+    if(!xs.length)html='<div class="empty">Nothing scanned that RQ doesn’t know about.</div>';
+  }else{
+    const rows=S.rows.map((r,i)=>({r,i})).filter(o=>{
+      const s=!!norm(o.r.serial);
+      if(tab==='unc')return s&&o.r.count<1&&match(o.r);
+      if(tab==='cnt')return s&&o.r.count>=1&&match(o.r);
+      return !s&&match(o.r);
+    });
+    html=rows.map(({r,i})=>{
+      if(tab==='non'){const d=r.count-r.inStock;const st=d===0?'':` <span class="tag">${d>0?'+':''}${d}</span>`;
+        return `<div class="item"><div class="name">${esc(r.name)}${st}</div><div class="sub">${esc(r.sku)} • RQ says ${r.inStock}</div><div class="act"><button data-a="minus" data-i="${i}" aria-label="Minus one">−</button><span class="qty">${r.count}</span><button data-a="plus" data-i="${i}" aria-label="Plus one">+</button></div></div>`;}
+      const btn=tab==='unc'?`<button data-a="mark" data-i="${i}">Mark found</button>`:`<button data-a="unmark" data-i="${i}">Uncount</button>`;
+      const how=r.how==='manual'?' <span class="tag">by hand</span>':'';
+      return `<div class="item"><div class="name">${esc(r.name)}${how}</div><div class="sub">${esc(r.serial)} • ${esc(r.sku)}</div><div class="act">${btn}</div></div>`;
+    }).join('');
+    if(!rows.length)html=`<div class="empty">${tab==='unc'?'Every serial on the sheet has been counted.':tab==='cnt'?'Nothing counted yet. Scan a device to start.':'No non-serial items on this sheet.'}</div>`;
+  }
+  L.innerHTML=html;
+}
+function listLines(){
+  const out=[];
+  S.rows.forEach(r=>{if(norm(r.serial)&&r.count>=1)out.push(r.serial);});
+  if($('optNon').checked)S.rows.forEach(r=>{if(!norm(r.serial))for(let k=0;k<r.count;k++)out.push(r.sku);});
+  if($('optExt').checked)S.extras.forEach(x=>out.push(x.code));
+  return out;
+}
+function renderOut(){const l=listLines();$('out').value=l.join('\n');$('outNote').textContent=l.length+' lines for RQ';}
+$('optNon').addEventListener('change',renderOut);$('optExt').addEventListener('change',renderOut);
+
+/* ---------- hand-off ---------- */
+$('copyBtn').addEventListener('click',()=>{
+  const t=$('out').value;
+  const fallback=()=>{$('out').focus();$('out').select();try{document.execCommand('copy');$('outNote').textContent='Copied';}catch(e){$('outNote').textContent='Selected. Press Ctrl+C to copy.';}};
+  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(t).then(()=>{$('outNote').textContent='Copied '+t.split('\n').filter(Boolean).length+' lines. Now press Ctrl+Shift+V in RQ.';},fallback);
+  else fallback();
+});
+const slug=s=>String(s||'store').trim().replace(/[^A-Za-z0-9]+/g,'-').replace(/^-|-$/g,'')||'store';
+const stamp=()=>{const d=new Date(),p=n=>String(n).padStart(2,'0');return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`;};
+async function saveFile(filename,text,mime){
+  const blob=new Blob([text],{type:mime});
+  try{
+    const file=new File([blob],filename,{type:mime});
+    if(navigator.canShare&&navigator.canShare({files:[file]})&&/Android|iPhone|iPad/i.test(navigator.userAgent)){
+      await navigator.share({files:[file],title:filename});
+      $('outNote').textContent='Shared '+filename+'. Pick Drive to save it there.';return;
+    }
+  }catch(e){if(e&&e.name==='AbortError'){$('outNote').textContent='Save cancelled.';return;}}
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=filename;document.body.appendChild(a);a.click();
+  setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},2000);
+  $('outNote').textContent='Downloaded '+filename;
+}
+function resultsCSV(){
+  const q=v=>{v=String(v==null?'':v);return /[",\r\n]/.test(v)||/^\d{11,}$/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
+  const L=[];
+  L.push(['RQ Floor Count results'].map(q).join(','));
+  L.push(['Store',S.store||''].map(q).join(','));
+  L.push(['RQ sheet',S.meta.title,S.meta.date,S.meta.file].map(q).join(','));
+  L.push(['Saved',new Date().toISOString()].map(q).join(','));
+  L.push(['App version',APP_VERSION].map(q).join(','));
+  L.push('');
+  L.push(['Result','Category','Product SKU','Product Name','Tracking #','Counted','In Stock (RQ)','Variance','How','Scanned at','Manufacturer SKU','Vendor SKU','Bar Code'].map(q).join(','));
+  S.rows.forEach(r=>{const s=!!norm(r.serial);const res=s?(r.count?'Counted':'Missing'):(r.count===r.inStock?'Match':'Variance');
+    L.push([res,r.cat,r.sku,r.name,r.serial,r.count,r.inStock,r.count-r.inStock,r.how,r.at||'',r.mfr,r.vendor,r.barcode].map(q).join(','));});
+  S.extras.forEach(x=>L.push(['Not in RQ','','','',x.code,1,0,1,'scan',x.at||'','','',''].map(q).join(',')));
+  return '﻿'+L.join('\r\n')+'\r\n';
+}
+$('saveBtn').addEventListener('click',()=>{if(S.sample){flash('warn','Example','Open the RQ count sheet and scan before saving.');return;}saveFile(`RQ-count_${slug(S.store)}_${stamp()}.csv`,resultsCSV(),'text/csv');});
+$('dlTxt').addEventListener('click',()=>{if(S.sample)return;saveFile(`RQ-list_${slug(S.store)}_${stamp()}.txt`,listLines().join('\r\n')+'\r\n','text/plain');});
+
+/* ---------- boot ---------- */
+S=restore()||sample();
+reindex();$('store').value=S.store||'';render();
+if(S.sample)flash('warn','Example','This is example data so you can see how it works. Tap “Open file” and pick the RQ count sheet to start a real count.');
+if('serviceWorker' in navigator&&location.protocol==='https:'){navigator.serviceWorker.register('sw.js').catch(()=>{});}
+window.__rq={addCode,get state(){return S;},resultsCSV,listLines};
+})();
+</script>
+</body>
+</html>
