@@ -63,14 +63,14 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .feedback.bad{background:var(--bad-soft);color:var(--ink)} .feedback.bad .k{background:var(--bad);color:var(--panel)}
 .feedback .txt{min-width:0;overflow-wrap:anywhere}
 
-.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
 .stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
 .stat .n{font:700 1.7rem/1.1 var(--display);font-variant-numeric:tabular-nums}
 .stat .l{font-size:.78rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
 .stat.u .n{color:var(--bad)} .stat.c .n{color:var(--ok)} .stat.x .n{color:var(--warn)}
 .bar{height:8px;border-radius:4px;background:var(--line);overflow:hidden}
 .bar i{display:block;height:100%;background:var(--ok);width:0;transition:width .3s}
-@media (max-width:560px){.stats{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:700px){.stats{grid-template-columns:repeat(2,1fr)}.stats .stat.x{grid-column:1/-1}}
 
 .tabs{display:flex;gap:4px;overflow-x:auto;border-bottom:1px solid var(--line)}
 .tabs button{border:none;border-bottom:3px solid transparent;border-radius:0;background:none;color:var(--muted);padding:10px 12px;white-space:nowrap}
@@ -142,7 +142,8 @@ input[type=file]{display:none}
   <section class="stats" aria-label="Progress">
     <div class="stat u"><div class="n" id="sU">0</div><div class="l">Still to find</div></div>
     <div class="stat c"><div class="n" id="sC">0</div><div class="l">Counted serials</div></div>
-    <div class="stat"><div class="n" id="sN">0</div><div class="l">Non-serial units</div></div>
+    <div class="stat u"><div class="n" id="sNU">0</div><div class="l">Non-serial to count</div></div>
+    <div class="stat"><div class="n" id="sN">0</div><div class="l">Non-serial counted</div></div>
     <div class="stat x"><div class="n" id="sX">0</div><div class="l">Not in RQ</div></div>
   </section>
   <div class="bar" aria-hidden="true"><i id="barFill"></i></div>
@@ -181,7 +182,7 @@ input[type=file]{display:none}
 
 <script>
 (function(){
-const APP_VERSION='1.0.3';
+const APP_VERSION='1.0.4';
 const KEY='rqFloorCount.v1';
 const $=id=>document.getElementById(id);
 const norm=s=>String(s==null?'':s).trim().replace(/\s+/g,'').toUpperCase();
@@ -388,7 +389,7 @@ function render(){
   const ser=S.rows.filter(r=>norm(r.serial)),non=S.rows.filter(r=>!norm(r.serial));
   const cnt=ser.filter(r=>r.count>=1).length,unc=ser.length-cnt,nonU=non.reduce((a,r)=>a+r.count,0);
   $('meta').innerHTML=(S.sample?'<span class="badge">Example data</span> ':'')+`<b>${esc(S.meta.title)}</b>${S.meta.date?' • exported '+esc(S.meta.date):''}<br>${esc(S.meta.file||'')}`;
-  $('sU').textContent=unc;$('sC').textContent=cnt;$('sN').textContent=nonU;$('sX').textContent=S.extras.length;
+  $('sU').textContent=unc;$('sC').textContent=cnt;$('sN').textContent=nonU;$('sNU').textContent=non.reduce((a,r)=>a+Math.max(0,r.inStock-r.count),0);$('sX').textContent=S.extras.length;
   $('tU').textContent=unc;$('tC').textContent=cnt;$('tN').textContent=non.filter(r=>r.inStock>0||r.count>0).length;$('tX').textContent=S.extras.length;
   $('barFill').style.width=(ser.length?cnt/ser.length*100:0)+'%';
   $('undoBtn').disabled=!S.log.length;
