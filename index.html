@@ -182,7 +182,7 @@ input[type=file]{display:none}
 
 <script>
 (function(){
-const APP_VERSION='1.0.4';
+const APP_VERSION='1.0.5';
 const KEY='rqFloorCount.v1';
 const $=id=>document.getElementById(id);
 const norm=s=>String(s==null?'':s).trim().replace(/\s+/g,'').toUpperCase();
@@ -319,7 +319,8 @@ function addCode(raw){
     r.count=1;r.how='scan';r.at=t;S.log.push({t:'ser',i});flash('ok','Counted',`${r.name} • ${r.serial}`);beep(true);
   }else if(idxNon.has(code)){
     const i=idxNon.get(code),r=S.rows[i];r.count++;S.log.push({t:'non',i});
-    flash('ok','+1',`${r.name} • now ${r.count} of ${r.inStock}`);beep(true);
+    if(r.inStock<=0){flash('bad','Not in RQ +1',`${r.name} • RQ shows 0 in stock, ${r.count} counted. Added to Not in RQ.`);beep(false);}
+    else{flash('ok','+1',`${r.name} • now ${r.count} of ${r.inStock}`);beep(true);}
   }else{
     if(S.extras.some(x=>x.code===code)){flash('warn','Already logged',`${code} is already on the Not in RQ list.`);beep(false);return;}
     S.extras.push({code,at:t});S.log.push({t:'ext',code});
@@ -389,8 +390,8 @@ function render(){
   const ser=S.rows.filter(r=>norm(r.serial)),non=S.rows.filter(r=>!norm(r.serial));
   const cnt=ser.filter(r=>r.count>=1).length,unc=ser.length-cnt,nonU=non.reduce((a,r)=>a+r.count,0);
   $('meta').innerHTML=(S.sample?'<span class="badge">Example data</span> ':'')+`<b>${esc(S.meta.title)}</b>${S.meta.date?' • exported '+esc(S.meta.date):''}<br>${esc(S.meta.file||'')}`;
-  $('sU').textContent=unc;$('sC').textContent=cnt;$('sN').textContent=nonU;$('sNU').textContent=non.reduce((a,r)=>a+Math.max(0,r.inStock-r.count),0);$('sX').textContent=S.extras.length;
-  $('tU').textContent=unc;$('tC').textContent=cnt;$('tN').textContent=non.filter(r=>r.inStock>0||r.count>0).length;$('tX').textContent=S.extras.length;
+  $('sU').textContent=unc;$('sC').textContent=cnt;$('sN').textContent=nonU;$('sNU').textContent=non.reduce((a,r)=>a+Math.max(0,r.inStock-r.count),0);const zeroU=non.reduce((a,r)=>a+(r.inStock<=0?r.count:0),0);$('sX').textContent=S.extras.length+zeroU;
+  $('tU').textContent=unc;$('tC').textContent=cnt;$('tN').textContent=non.filter(r=>r.inStock>0||r.count>0).length;$('tX').textContent=S.extras.length+zeroU;
   $('barFill').style.width=(ser.length?cnt/ser.length*100:0)+'%';
   $('undoBtn').disabled=!S.log.length;
   renderList();renderOut();
@@ -401,7 +402,10 @@ function renderList(){
   if(tab==='ext'){
     const xs=S.extras.map((x,i)=>({x,i})).filter(o=>!q||o.x.code.includes(q));
     html=xs.map(o=>`<div class="item"><div class="name mono">${esc(o.x.code)}</div><div class="sub">Scanned, not on the RQ sheet. Could be stock not received in RQ, or a misread barcode.</div><div class="act"><button data-a="rmx" data-i="${o.i}">Remove</button></div></div>`).join('');
-    if(!xs.length)html='<div class="empty">Nothing scanned that RQ doesn’t know about.</div>';
+    // non-serial items RQ shows as 0 in stock but were counted
+    const zs=S.rows.map((r,i)=>({r,i})).filter(o=>!norm(o.r.serial)&&o.r.inStock<=0&&o.r.count>0&&match(o.r));
+    html+=zs.map(({r,i})=>`<div class="item"><div class="name">${esc(r.name)}</div><div class="sub">${esc(r.vendor||r.sku)} • RQ shows 0 in stock</div><div class="act"><button data-a="minus" data-i="${i}" aria-label="Minus one">−</button><span class="qty">${r.count}</span><button data-a="plus" data-i="${i}" aria-label="Plus one">+</button></div></div>`).join('');
+    if(!xs.length&&!zs.length)html='<div class="empty">Nothing scanned that RQ doesn’t know about.</div>';
   }else{
     const rows=S.rows.map((r,i)=>({r,i})).filter(o=>{
       const s=!!norm(o.r.serial);
