@@ -164,13 +164,9 @@ input[type=file]{display:none}
       <li><b>Save to Drive</b> from the tablet.</li>
       <li><b>Open on PC:</b> open this app, tap <b>Open file</b> and pick the saved count.</li>
     </ol>
-    <label class="chk"><input type="checkbox" id="optNon" checked> Include non-serial items (SKU repeated once per unit)</label>
-    <label class="chk"><input type="checkbox" id="optExt"> Include serials that weren't on the RQ sheet</label>
-    <textarea id="out" readonly aria-label="List for RQ"></textarea>
+    <textarea id="out" readonly aria-label="Counted items"></textarea>
     <div class="row">
       <button class="primary" id="saveBtn">Save to Drive</button>
-      <button id="copyBtn">Copy list</button>
-      <button id="dlTxt">Save list only (.txt)</button>
       <span class="note" id="outNote"></span>
     </div>
   </section>
@@ -185,7 +181,7 @@ input[type=file]{display:none}
 
 <script>
 (function(){
-const APP_VERSION='1.0.2';
+const APP_VERSION='1.0.3';
 const KEY='rqFloorCount.v1';
 const $=id=>document.getElementById(id);
 const norm=s=>String(s==null?'':s).trim().replace(/\s+/g,'').toUpperCase();
@@ -393,7 +389,7 @@ function render(){
   const cnt=ser.filter(r=>r.count>=1).length,unc=ser.length-cnt,nonU=non.reduce((a,r)=>a+r.count,0);
   $('meta').innerHTML=(S.sample?'<span class="badge">Example data</span> ':'')+`<b>${esc(S.meta.title)}</b>${S.meta.date?' • exported '+esc(S.meta.date):''}<br>${esc(S.meta.file||'')}`;
   $('sU').textContent=unc;$('sC').textContent=cnt;$('sN').textContent=nonU;$('sX').textContent=S.extras.length;
-  $('tU').textContent=unc;$('tC').textContent=cnt;$('tN').textContent=non.length;$('tX').textContent=S.extras.length;
+  $('tU').textContent=unc;$('tC').textContent=cnt;$('tN').textContent=non.filter(r=>r.inStock>0||r.count>0).length;$('tX').textContent=S.extras.length;
   $('barFill').style.width=(ser.length?cnt/ser.length*100:0)+'%';
   $('undoBtn').disabled=!S.log.length;
   renderList();renderOut();
@@ -410,7 +406,11 @@ function renderList(){
       const s=!!norm(o.r.serial);
       if(tab==='unc')return s&&o.r.count<1&&match(o.r);
       if(tab==='cnt')return s&&o.r.count>=1&&match(o.r);
-      return !s&&match(o.r);
+      if(s)return false;
+      const r=o.r;
+      // 0-in-stock items stay hidden until counted, or until the vendor ID / SKU / barcode is typed in the filter
+      if(r.inStock>0||r.count>0)return match(r);
+      return !!q&&[r.vendor,r.sku,r.mfr,r.barcode].some(c=>norm(c)===q);
     });
     html=rows.map(({r,i})=>{
       if(tab==='non'){const d=r.count-r.inStock;const st=d===0?'':` <span class="tag">${d>0?'+':''}${d}</span>`;
@@ -419,27 +419,28 @@ function renderList(){
       const how=r.how==='manual'?' <span class="tag">by hand</span>':'';
       return `<div class="item"><div class="name">${esc(r.name)}${how}</div><div class="sub">${esc(r.serial)} • ${esc(r.sku)}</div><div class="act">${btn}</div></div>`;
     }).join('');
-    if(!rows.length)html=`<div class="empty">${tab==='unc'?'Every serial on the sheet has been counted.':tab==='cnt'?'Nothing counted yet. Scan a device to start.':'No non-serial items on this sheet.'}</div>`;
+    if(!rows.length)html=`<div class="empty">${tab==='unc'?'Every serial on the sheet has been counted.':tab==='cnt'?'Nothing counted yet. Scan a device to start.':(q?'No match. Items with 0 in stock appear when you type their full vendor ID.':'No non-serial items in stock. Scan or type a vendor ID to count one that RQ shows as 0.')}</div>`;
   }
   L.innerHTML=html;
 }
 function listLines(){
   const out=[];
+  // every counted serial (on the RQ sheet or not), then each non-serial product with its quantity
   S.rows.forEach(r=>{if(norm(r.serial)&&r.count>=1)out.push(r.serial);});
-  if($('optNon').checked)S.rows.forEach(r=>{if(!norm(r.serial))for(let k=0;k<r.count;k++)out.push(r.sku);});
-  if($('optExt').checked)S.extras.forEach(x=>out.push(x.code));
+  S.extras.forEach(x=>out.push(x.code));
+  const non=S.rows.filter(r=>!norm(r.serial)&&r.count>0);
+  if(non.length&&out.length)out.push('');
+  non.forEach(r=>out.push(`${r.name}\t${r.count}`));
   return out;
 }
-function renderOut(){const l=listLines();$('out').value=l.join('\n');$('outNote').textContent=l.length+' lines for RQ';}
-$('optNon').addEventListener('change',renderOut);$('optExt').addEventListener('change',renderOut);
+function renderOut(){
+  const ser=S.rows.filter(r=>norm(r.serial)&&r.count>=1).length+S.extras.length;
+  const non=S.rows.filter(r=>!norm(r.serial)&&r.count>0);
+  $('out').value=listLines().join('\n');
+  $('outNote').textContent=`${ser} serial${ser===1?'':'s'} • ${non.length} non-serial product${non.length===1?'':'s'} (${non.reduce((a,r)=>a+r.count,0)} units)`;
+}
 
 /* ---------- hand-off ---------- */
-$('copyBtn').addEventListener('click',()=>{
-  const t=$('out').value;
-  const fallback=()=>{$('out').focus();$('out').select();try{document.execCommand('copy');$('outNote').textContent='Copied';}catch(e){$('outNote').textContent='Selected. Press Ctrl+C to copy.';}};
-  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(t).then(()=>{$('outNote').textContent='Copied '+t.split('\n').filter(Boolean).length+' lines. Now press Ctrl+Shift+V in RQ.';},fallback);
-  else fallback();
-});
 const slug=s=>String(s||'store').trim().replace(/[^A-Za-z0-9]+/g,'-').replace(/^-|-$/g,'')||'store';
 const stamp=()=>{const d=new Date(),p=n=>String(n).padStart(2,'0');return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`;};
 async function saveFile(filename,text,mime){
@@ -471,7 +472,6 @@ function resultsCSV(){
   return '﻿'+L.join('\r\n')+'\r\n';
 }
 $('saveBtn').addEventListener('click',()=>{if(S.sample){flash('warn','Example','Open the RQ count sheet and scan before saving.');return;}saveFile(`RQ-count_${slug(S.store)}_${stamp()}.csv`,resultsCSV(),'text/csv');});
-$('dlTxt').addEventListener('click',()=>{if(S.sample)return;saveFile(`RQ-list_${slug(S.store)}_${stamp()}.txt`,listLines().join('\r\n')+'\r\n','text/plain');});
 
 /* ---------- boot ---------- */
 S=restore()||sample();
