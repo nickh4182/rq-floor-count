@@ -84,7 +84,8 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .item .sub{font:.82rem var(--mono);color:var(--muted);min-width:0;overflow-wrap:anywhere}
 .item .act{grid-row:1/3;grid-column:2;display:flex;gap:6px;align-items:center}
 .item .act button{min-height:40px;padding:6px 10px;font-size:.85rem}
-.qty{font:700 1.2rem var(--display);font-variant-numeric:tabular-nums;min-width:3ch;text-align:center}
+.qty{font:700 1.2rem var(--display);font-variant-numeric:tabular-nums;width:4.2ch;min-height:40px;text-align:center;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);padding:4px 2px;-moz-appearance:textfield}
+.qty::-webkit-outer-spin-button,.qty::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .tag{font:600 .7rem var(--body);text-transform:uppercase;letter-spacing:.07em;padding:3px 6px;border-radius:4px;background:var(--accent-soft);color:var(--accent)}
 .empty{padding:22px 14px;color:var(--muted);text-align:center}
 
@@ -182,7 +183,7 @@ input[type=file]{display:none}
 
 <script>
 (function(){
-const APP_VERSION='1.0.5';
+const APP_VERSION='1.0.6';
 const KEY='rqFloorCount.v1';
 const $=id=>document.getElementById(id);
 const norm=s=>String(s==null?'':s).trim().replace(/\s+/g,'').toUpperCase();
@@ -333,6 +334,7 @@ $('undoBtn').addEventListener('click',()=>{
   const l=S.log.pop();if(!l)return;
   if(l.t==='ser'){const r=S.rows[l.i];r.count=0;r.how='';flash('warn','Undone',`${r.name} • ${r.serial} is back to uncounted.`);}
   else if(l.t==='non'){const r=S.rows[l.i];r.count=Math.max(0,r.count-1);flash('warn','Undone',`${r.name} • now ${r.count}`);}
+  else if(l.t==='set'){const r=S.rows[l.i];r.count=l.prev;flash('warn','Undone',`${r.name} • back to ${r.count}`);}
   else if(l.t==='ext'){S.extras=S.extras.filter(x=>x.code!==l.code);flash('warn','Undone',`Removed ${l.code} from Not in RQ.`);}
   store();render();$('scan').focus();
 });
@@ -364,6 +366,20 @@ $('camClose').addEventListener('click',stopCam);
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&camStream)stopCam();});
 
 /* ---------- list actions ---------- */
+// typed quantities for non-serial items: saved when the rep presses Enter/Done or leaves the box
+$('list').addEventListener('change',e=>{
+  const el=e.target.closest('input.qty');if(!el||S.sample)return;
+  const i=+el.dataset.i,r=S.rows[i];
+  const v=Math.max(0,Math.floor(Number(el.value)));
+  if(!Number.isFinite(v)||el.value.trim()===''){el.value=r.count;return;}
+  if(v===r.count)return;
+  S.log.push({t:'set',i,prev:r.count});r.count=v;
+  if(r.inStock<=0)flash('bad','Not in RQ',`${r.name} \u2022 RQ shows 0 in stock, ${v} counted.`);
+  else flash('ok','Set',`${r.name} \u2022 ${v} of ${r.inStock}`);
+  store();render();
+});
+$('list').addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.matches('input.qty')){e.preventDefault();e.target.blur();}});
+$('list').addEventListener('focusin',e=>{if(e.target.matches('input.qty'))e.target.select();});
 $('list').addEventListener('click',e=>{
   const b=e.target.closest('button[data-a]');if(!b||S.sample)return;
   const a=b.dataset.a,i=+b.dataset.i;
@@ -404,7 +420,7 @@ function renderList(){
     html=xs.map(o=>`<div class="item"><div class="name mono">${esc(o.x.code)}</div><div class="sub">Scanned, not on the RQ sheet. Could be stock not received in RQ, or a misread barcode.</div><div class="act"><button data-a="rmx" data-i="${o.i}">Remove</button></div></div>`).join('');
     // non-serial items RQ shows as 0 in stock but were counted
     const zs=S.rows.map((r,i)=>({r,i})).filter(o=>!norm(o.r.serial)&&o.r.inStock<=0&&o.r.count>0&&match(o.r));
-    html+=zs.map(({r,i})=>`<div class="item"><div class="name">${esc(r.name)}</div><div class="sub">${esc(r.vendor||r.sku)} • RQ shows 0 in stock</div><div class="act"><button data-a="minus" data-i="${i}" aria-label="Minus one">−</button><span class="qty">${r.count}</span><button data-a="plus" data-i="${i}" aria-label="Plus one">+</button></div></div>`).join('');
+    html+=zs.map(({r,i})=>`<div class="item"><div class="name">${esc(r.name)}</div><div class="sub">${esc(r.vendor||r.sku)} • RQ shows 0 in stock</div><div class="act"><button data-a="minus" data-i="${i}" aria-label="Minus one">−</button><input class="qty" type="number" inputmode="numeric" min="0" step="1" data-i="${i}" value="${r.count}" aria-label="Quantity counted for ${esc(r.name)}"><button data-a="plus" data-i="${i}" aria-label="Plus one">+</button></div></div>`).join('');
     if(!xs.length&&!zs.length)html='<div class="empty">Nothing scanned that RQ doesn’t know about.</div>';
   }else{
     const rows=S.rows.map((r,i)=>({r,i})).filter(o=>{
@@ -419,7 +435,7 @@ function renderList(){
     });
     html=rows.map(({r,i})=>{
       if(tab==='non'){const d=r.count-r.inStock;const st=d===0?'':` <span class="tag">${d>0?'+':''}${d}</span>`;
-        return `<div class="item"><div class="name">${esc(r.name)}${st}</div><div class="sub">${esc(r.vendor||r.sku)} • RQ says ${r.inStock}</div><div class="act"><button data-a="minus" data-i="${i}" aria-label="Minus one">−</button><span class="qty">${r.count}</span><button data-a="plus" data-i="${i}" aria-label="Plus one">+</button></div></div>`;}
+        return `<div class="item"><div class="name">${esc(r.name)}${st}</div><div class="sub">${esc(r.vendor||r.sku)} • RQ says ${r.inStock}</div><div class="act"><button data-a="minus" data-i="${i}" aria-label="Minus one">−</button><input class="qty" type="number" inputmode="numeric" min="0" step="1" data-i="${i}" value="${r.count}" aria-label="Quantity counted for ${esc(r.name)}"><button data-a="plus" data-i="${i}" aria-label="Plus one">+</button></div></div>`;}
       const btn=tab==='unc'?`<button data-a="mark" data-i="${i}">Mark found</button>`:`<button data-a="unmark" data-i="${i}">Uncount</button>`;
       const how=r.how==='manual'?' <span class="tag">by hand</span>':'';
       return `<div class="item"><div class="name">${esc(r.name)}${how}</div><div class="sub">${esc(r.serial)} • ${esc(r.sku)}</div><div class="act">${btn}</div></div>`;
